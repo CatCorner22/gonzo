@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0c0907;
+  --foreground: #fef3c7;
+  --gonzo-bg: #0c0907;
+  --gonzo-accent: #dc2626;
+  --gonzo-gold: #f59e0b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-gonzo-bg: var(--gonzo-bg);
+  --color-gonzo-accent: var(--gonzo-accent);
+  --color-gonzo-gold: var(--gonzo-gold);
+  --font-serif: var(--font-gonzo-serif), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-gonzo-mono), "Courier New", monospace;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at top, rgba(220, 38, 38, 0.08), transparent 55%),
+    radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.06), transparent 50%),
+    var(--gonzo-bg);
+  color: var(--foreground);
+  font-family: var(--font-serif);
+}
+
+::selection {
+  background: rgba(220, 38, 38, 0.35);
+  color: #fff;
+}
