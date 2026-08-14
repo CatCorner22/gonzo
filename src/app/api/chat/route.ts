@@ -10,14 +10,19 @@ import { getEngineHealth } from "@/lib/gonzo/health";
 import { getConfiguredProvider, getGonzoModel } from "@/lib/gonzo/model";
 import { buildGonzoSystemPrompt, extractUserTexts } from "@/lib/gonzo/persona";
 import { buildRetrievalQuery } from "@/lib/gonzo/retrieve";
-import { synthesizeGonzoReply } from "@/lib/gonzo/synthesize";
+import { followUpOffset, synthesizeGonzoReply } from "@/lib/gonzo/synthesize";
 
 export const maxDuration = 60;
 
-function demoStreamResponse(messages: UIMessage[]) {
-  const latest = extractUserTexts(messages).at(-1) ?? "";
-  const text = synthesizeGonzoReply(latest);
-  const messageId = "gonzo-synth";
+function shouldUseSynthesizer(): boolean {
+  return (
+    getConfiguredProvider() === "none" && process.env.GONZO_DEMO_MODE !== "false"
+  );
+}
+
+function demoStreamResponse(query: string, offset: number, messages: UIMessage[]) {
+  const text = synthesizeGonzoReply(query, offset);
+  const messageId = crypto.randomUUID();
 
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
@@ -25,7 +30,7 @@ function demoStreamResponse(messages: UIMessage[]) {
       execute({ writer }) {
         writer.write({ type: "text-start", id: messageId });
 
-        const chunkSize = 22;
+        const chunkSize = 36;
         for (let i = 0; i < text.length; i += chunkSize) {
           writer.write({
             type: "text-delta",
@@ -46,11 +51,15 @@ export async function POST(req: Request) {
     const userTexts = extractUserTexts(messages);
     const retrievalQuery = buildRetrievalQuery(userTexts);
 
-    if (getConfiguredProvider() === "none") {
-      if (process.env.GONZO_DEMO_MODE === "true") {
-        return demoStreamResponse(messages);
-      }
+    if (shouldUseSynthesizer()) {
+      return demoStreamResponse(
+        retrievalQuery || userTexts.at(-1) || "",
+        followUpOffset(userTexts),
+        messages,
+      );
+    }
 
+    if (getConfiguredProvider() === "none") {
       return Response.json(
         {
           error:

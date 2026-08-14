@@ -1,132 +1,113 @@
 import type { CorpusCategory, CorpusChunk } from "./types";
 import { retrieveDetailed } from "./retrieve";
 
-const OPENERS = [
-  "The question landed like a process server at a wedding — wrong place, right timing, and everybody suddenly nervous.",
-  "All right. You want the truth before the coffee cools, which in this country is always a reckless request.",
-  "I was going to ignore this, but silence in America is just another kind of lie, and I've filed enough of those.",
-  "Here's the dispatch, straight from the bunker — no handlers, no focus group, no polite throat-clearing.",
-];
-
-const CLOSERS: Record<CorpusCategory | "default", string[]> = {
-  style: [
-    "That's the music. Same beat in every city — only the costumes change.",
-    "Write it that way or don't write it at all.",
-  ],
+const OPENERS: Record<string, string[]> = {
   biography: [
-    "That's the ledger. The rest is noise, lawyers, and bad weather.",
-    "I lived it. I typed it. You can believe whichever version helps you sleep.",
+    "Fine. You want the ledger. I'll give you the ledger.",
+    "The biographical file is stained, but it's still the file.",
   ],
   works: [
-    "Buy the book if you want the full autopsy. What I gave you is the cause of death.",
-    "The page count is longer; the verdict isn't.",
+    "The work is the only honest alibi I ever had.",
+    "Books, columns, wreckage — that's the paper trail.",
   ],
   people: [
-    "People are the story. The institution is just where they hide the receipts.",
-    "Remember the name. The country forgets on purpose.",
+    "People are the story. Institutions are just the wallpaper they hide behind.",
+    "Names matter. The country prefers cartoons.",
   ],
   places: [
-    "Places lie beautifully. You have to walk them at the wrong hour to hear the truth.",
-    "Geography is destiny in this country, and destiny is usually for sale.",
+    "Places lie beautifully. You have to arrive at the wrong hour.",
+    "Geography in this country is just destiny with a parking lot.",
   ],
   politics: [
-    "Vote if it makes you feel human. Just don't confuse the ballot with a miracle.",
-    "The machine keeps running. Somebody's always feeding it fresh meat.",
+    "Politics is a blood sport in church clothes.",
+    "You want the campaign weather? It was always a storm with better catering.",
   ],
   themes: [
-    "Same war, different uniform. That's the American century in one sentence.",
-    "If that doesn't answer you, you're asking the wrong question.",
+    "Same war, different uniform.",
+    "The theme doesn't change. Only the lighting.",
   ],
-  safety: [
-    "I'm not your accomplice. I'm the witness.",
-    "That's the line. Cross it on your own time.",
+  style: [
+    "The voice is the method. Everything else is furniture.",
   ],
   default: [
-    "That's what I know. The rest is rumor, bourbon, and tomorrow's hangover.",
-    "File that under: things the country doesn't want in the paper.",
+    "All right. Straight from the bunker — no handlers.",
+    "Here's the dispatch before the coffee cools.",
   ],
 };
 
-function pick<T>(items: T[]): T {
-  return items[Math.floor(Math.random() * items.length)]!;
-}
+const CLOSERS: Record<CorpusCategory | "default", string[]> = {
+  style: ["That's the music. Same beat in every city."],
+  biography: ["That's the ledger. The rest is lawyers and weather."],
+  works: ["The page count is longer. The verdict isn't."],
+  people: ["Remember the name. The country forgets on purpose."],
+  places: ["Walk it at the wrong hour if you want the truth."],
+  politics: ["The machine keeps running. Somebody always feeds it."],
+  themes: ["If that doesn't answer you, you're asking the wrong question."],
+  safety: ["I'm the witness. Not the accomplice."],
+  default: ["That's what I know. The rest is rumor and tomorrow's hangover."],
+};
 
-function weaveChunk(chunk: CorpusChunk, index: number): string {
-  const lead =
-    index === 0
-      ? "Start here:"
-      : index === 1
-        ? "And don't forget:"
-        : "Also worth knowing:";
-
-  const body = chunk.content
-    .replace(/^You are channeling Hunter S\. Thompson[^.]*\.\s*/i, "I'm ")
-    .replace(/^You are Hunter[^.]*\.\s*/i, "I'm ")
-    .replace(/\bYou are\b/g, "I'm")
-    .replace(/\bYou\b/g, "I")
-    .replace(/\byour\b/gi, "my");
-
-  return `${lead} ${body}`;
-}
-
-function focusLine(query: string, primary?: CorpusChunk): string {
-  if (!primary) {
-    return "You're fishing in deep water without a map. I'll give you what I can from memory and spite.";
+function hashString(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
   }
-
-  const trimmed = query.trim().replace(/\?$/, "");
-  return `You asked about ${trimmed.toLowerCase()}. ${primary.topic} is the right alley — let me walk you through it before the cops show up.`;
+  return Math.abs(hash);
 }
 
-export function synthesizeGonzoReply(query: string): string {
-  const detail = retrieveDetailed(query, 5);
-  const hits = detail.hits.filter((hit) => hit.chunk.category !== "safety");
+function pick<T>(items: T[], seed: string): T {
+  return items[hashString(seed) % items.length]!;
+}
 
-  if (hits.length === 0) {
+function toVoice(content: string): string {
+  return content
+    .replace(/^EXEMPLAR TONE:\s*/i, "")
+    .replace(/^You are channeling Hunter S\. Thompson[^.]*:\s*/i, "I'm ")
+    .replace(/^You are Hunter Stockton Thompson/i, "I'm Hunter Stockton Thompson")
+    .replace(/^You are Hunter[^.]*\.\s*/i, "")
+    .replace(/\bYou lived\b/g, "I lived")
+    .replace(/\bYou wrote\b/g, "I wrote")
+    .replace(/\bYou treated\b/g, "I treated")
+    .replace(/\bThompson's\b/g, "My")
+    .replace(/\bWrite in first person\b/i, "I write in first person")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function shouldUse(chunk: CorpusChunk): boolean {
+  return chunk.category !== "safety" && !chunk.id.startsWith("voice-exemplar");
+}
+
+export function synthesizeGonzoReply(query: string, offset = 0): string {
+  const detail = retrieveDetailed(query, Math.max(8, offset + 4));
+  const hits = detail.hits.filter((hit) => shouldUse(hit.chunk));
+  const sliced = hits.slice(offset, offset + 3);
+  const used = sliced.length > 0 ? sliced : hits.slice(0, 3);
+
+  if (used.length === 0) {
     return [
-      pick(OPENERS),
-      "",
-      "I don't have a clean file on that — which in Gonzo journalism usually means either you invented the topic or the country hasn't lied about it loudly enough yet.",
-      "",
-      pick(CLOSERS.default),
-    ].join("\n");
+      pick(OPENERS.default, query),
+      "I don't have a clean file on that — which usually means either you invented the topic or the country hasn't lied about it loudly enough yet.",
+      pick(CLOSERS.default, `${query}:close`),
+    ].join("\n\n");
   }
 
-  const primary = hits[0]!.chunk;
-  const woven = hits.slice(0, 3).map((hit, index) => weaveChunk(hit.chunk, index));
+  const primary = used[0]!.chunk;
+  const openerPool = OPENERS[primary.category] ?? OPENERS.default;
+  const paragraphs = used.map((hit) => toVoice(hit.chunk.content));
+  const seed = `${query}:${offset}`;
 
   return [
-    pick(OPENERS),
-    "",
-    focusLine(query, primary),
-    "",
-    ...woven,
-    "",
-    pick(CLOSERS[primary.category] ?? CLOSERS.default),
+    pick(openerPool, seed),
+    ...paragraphs,
+    pick(CLOSERS[primary.category] ?? CLOSERS.default, `${seed}:close`),
   ].join("\n\n");
 }
 
-export function synthesizeStreamResponse(
-  messages: { role: string; parts?: { type: string; text?: string }[] }[],
-  write: (delta: string) => void,
-): string {
-  const texts = messages
-    .filter((m) => m.role === "user")
-    .map((m) =>
-      (m.parts ?? [])
-        .filter((p) => p.type === "text" && p.text)
-        .map((p) => p.text!)
-        .join("\n"),
-    )
-    .filter(Boolean);
-
-  const latest = texts.at(-1) ?? "";
-  const text = synthesizeGonzoReply(latest);
-
-  const chunkSize = 18;
-  for (let i = 0; i < text.length; i += chunkSize) {
-    write(text.slice(i, i + chunkSize));
+export function followUpOffset(userMessages: string[]): number {
+  const latest = userMessages.at(-1)?.trim() ?? "";
+  if (!/^(tell me more|more|go on|continue|and\b)/i.test(latest)) {
+    return 0;
   }
-
-  return text;
+  return Math.min((userMessages.length - 1) * 2, 6);
 }

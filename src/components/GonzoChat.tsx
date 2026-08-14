@@ -30,7 +30,7 @@ function parseChatError(message: string): string {
   }
 
   if (message.includes("503") || message.includes("API key")) {
-    return "No API key configured. Add AI_GATEWAY_API_KEY or HF_TOKEN to .env.local and restart the dev server. Or set GONZO_DEMO_MODE=true to test without a key.";
+    return "No API key configured. Add AI_GATEWAY_API_KEY or HF_TOKEN to .env.local and restart the dev server.";
   }
 
   return message;
@@ -54,22 +54,28 @@ export function GonzoChat() {
     [],
   );
 
-  const { messages, sendMessage, status, error } = useChat({ transport });
+  const { messages, sendMessage, status, error, stop } = useChat({ transport });
 
   const isBusy = status === "submitted" || status === "streaming";
+  const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+  const showTyping = isBusy && !lastAssistant?.parts.some((part) => part.type === "text" && part.text);
 
   useEffect(() => {
-    fetch("/api/health")
+    const controller = new AbortController();
+    fetch("/api/health", { signal: controller.signal })
       .then((res) => res.json())
       .then((data: EngineHealth) => setHealth(data))
-      .catch(() => setHealth(null));
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setHealth(null);
+      });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
   }, [messages, status]);
 
   function handleSubmit(event: React.FormEvent) {
@@ -86,8 +92,8 @@ export function GonzoChat() {
   }
 
   return (
-    <div className="flex min-h-full flex-col">
-      <header className="border-b border-amber-900/40 bg-black/40 px-6 py-5 backdrop-blur-sm">
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-amber-900/40 bg-black/40 px-6 py-5 backdrop-blur-sm">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.35em] text-amber-500/80">
@@ -107,20 +113,20 @@ export function GonzoChat() {
       </header>
 
       {health && !health.ok && (
-        <div className="border-b border-amber-800/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100/80">
+        <div className="shrink-0 border-b border-amber-800/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100/80">
           {health.setup}
         </div>
       )}
 
       {health?.demoMode && (
-        <div className="border-b border-amber-700/30 bg-amber-900/20 px-4 py-2 font-mono text-xs text-amber-200/70">
-          DEMO MODE — corpus-backed Gonzo synthesis (no LLM). Add AI_GATEWAY_API_KEY for live prose.
+        <div className="shrink-0 border-b border-amber-700/30 bg-amber-900/20 px-4 py-2 font-mono text-xs text-amber-200/70">
+          SYNTHESIZER — RAG-backed Gonzo prose. Add AI_GATEWAY_API_KEY for a live LLM.
         </div>
       )}
 
       <div
         ref={scrollRef}
-        className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-8 sm:px-6"
+        className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-8 sm:px-6"
       >
         {messages.length === 0 && (
           <section className="rounded-2xl border border-amber-900/30 bg-amber-950/10 p-6">
@@ -172,7 +178,7 @@ export function GonzoChat() {
           );
         })}
 
-        {isBusy && (
+        {showTyping && (
           <div className="mr-auto max-w-[92%] rounded-2xl border border-red-900/30 bg-black/40 px-5 py-4">
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-red-400/80">
               Gonzo is typing
@@ -190,7 +196,7 @@ export function GonzoChat() {
 
       <form
         onSubmit={handleSubmit}
-        className="sticky bottom-0 border-t border-amber-900/40 bg-black/70 px-4 py-4 backdrop-blur-md sm:px-6"
+        className="shrink-0 border-t border-amber-900/40 bg-black/70 px-4 py-4 backdrop-blur-md sm:px-6"
       >
         <div className="mx-auto flex max-w-4xl gap-3">
           <input
@@ -200,13 +206,23 @@ export function GonzoChat() {
             disabled={isBusy}
             className="flex-1 rounded-xl border border-amber-800/40 bg-amber-950/20 px-4 py-3 font-serif text-amber-50 placeholder:text-amber-200/30 focus:border-amber-500/60 focus:outline-none disabled:opacity-50"
           />
-          <button
-            type="submit"
-            disabled={isBusy || !input.trim()}
-            className="rounded-xl bg-red-700 px-5 py-3 font-mono text-xs uppercase tracking-[0.2em] text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Send
-          </button>
+          {isBusy ? (
+            <button
+              type="button"
+              onClick={() => stop()}
+              className="rounded-xl border border-amber-700/50 px-5 py-3 font-mono text-xs uppercase tracking-[0.2em] text-amber-100 transition hover:bg-amber-950/40"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="rounded-xl bg-red-700 px-5 py-3 font-mono text-xs uppercase tracking-[0.2em] text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Send
+            </button>
+          )}
         </div>
       </form>
     </div>

@@ -71,6 +71,10 @@ const identity = retrieveDetailed("Who are you?");
 assert.ok(identity.tokens.includes("who"));
 assert.ok(identity.alwaysIncluded.some((chunk) => chunk.id === "voice-core"));
 
+const nixonToYou = retrieveDetailed("Who was Nixon to you?");
+assert.equal(nixonToYou.hits[0]?.chunk.id, "people-nixon");
+assert.ok(!nixonToYou.hits.some((hit) => hit.chunk.id === "bio-identity"));
+
 console.log(
   `retrieve.test.ts passed (${stats.chunks} chunks, categories=${JSON.stringify(stats.categories)})`,
 );

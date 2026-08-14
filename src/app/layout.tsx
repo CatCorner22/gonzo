@@ -26,7 +26,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${gonzoSerif.variable} ${gonzoMono.variable} h-full`}
     >
-      <body className="min-h-full bg-gonzo-bg text-amber-50 antialiased">
+      <body className="h-full overflow-hidden bg-gonzo-bg text-amber-50 antialiased">
         {children}
       </body>
     </html>

@@ -107,9 +107,12 @@ const STOP_WORDS = new Set([
   "anything",
   "please",
   "like",
+  "really",
+  "still",
+  "really",
+  "still",
 ]);
 
-/** Keep these even if they also appear on the stop list. */
 const SIGNAL_WORDS = new Set([
   "who",
   "you",
@@ -122,6 +125,8 @@ const SIGNAL_WORDS = new Set([
   "car",
 ]);
 
+const GENERIC_IDENTITY_TOKENS = new Set(["who", "you", "your", "yourself"]);
+
 const QUERY_ALIASES: Record<string, string[]> = {
   hst: ["hunter", "thompson"],
   hunter: ["thompson", "hst"],
@@ -131,22 +136,22 @@ const QUERY_ALIASES: Record<string, string[]> = {
   "bat country": ["vegas", "desert"],
   duke: ["raoul", "persona"],
   raoul: ["duke"],
-  acosta: ["oscar", "dr gonzo", "gonzo"],
+  acosta: ["oscar", "dr gonzo"],
   "dr gonzo": ["acosta", "oscar"],
-  oscar: ["acosta"],
+  "oscar acosta": ["acosta", "dr gonzo"],
   nixon: ["watergate", "rmn"],
   rmn: ["nixon"],
   mcgovern: ["1972", "campaign"],
-  "owl farm": ["woody creek", "home"],
+  "owl farm": ["woody creek"],
   "woody creek": ["owl farm", "colorado"],
   derby: ["kentucky", "louisville", "churchill"],
   kentucky: ["louisville", "derby"],
-  depp: ["johnny", "film"],
-  johnny: ["depp"],
+  depp: ["johnny depp", "film"],
+  "johnny depp": ["depp"],
   steedman: ["steadman"],
   steadman: ["ralph"],
   "rolling stone": ["wenner", "magazine"],
-  "american dream": ["vegas", "america"],
+  "american dream": ["america", "dream"],
   sheriff: ["freak power", "aspen"],
   "freak power": ["sheriff", "aspen"],
   angels: ["hells angels", "motorcycle"],
@@ -172,17 +177,23 @@ const QUERY_ALIASES: Record<string, string[]> = {
 const FOLLOW_UP_RE =
   /^(yes|yeah|yep|ok|okay|and\b|what about|how about|tell me more|more|go on|continue|same|that|those|it)\b/i;
 
-export type RetrievalHit = {
-  chunk: CorpusChunk;
-  score: number;
-};
+const IDENTITY_QUERY_RE =
+  /^(who are you|who're you|who r u|introduce yourself|what(?:'s| is) your name|tell me about yourself)\b/i;
 
-export type RetrievalResult = {
-  query: string;
-  tokens: string[];
-  phrases: string[];
-  hits: RetrievalHit[];
-  alwaysIncluded: CorpusChunk[];
+const ALWAYS_INCLUDED = GONZO_CORPUS.filter((chunk) => chunk.alwaysInclude);
+
+const IDENTITY_FALLBACK = ["bio-identity", "theme-gonzo-defined", "work-vegas"]
+  .map((id) => CORPUS_BY_ID.get(id))
+  .filter((chunk): chunk is CorpusChunk => Boolean(chunk));
+
+type IndexedChunk = {
+  chunk: CorpusChunk;
+  keywords: Set<string>;
+  phrases: Set<string>;
+  topicTokens: Set<string>;
+  contentTokens: Set<string>;
+  paddedContent: string;
+  paddedTopic: string;
 };
 
 function normalize(text: string): string {
@@ -197,6 +208,10 @@ function tokenize(text: string): string[] {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function containsPhrase(paddedHaystack: string, phrase: string): boolean {
+  return paddedHaystack.includes(` ${phrase} `);
 }
 
 const INFLECTABLE = new Set([
@@ -241,124 +256,172 @@ function withInflections(token: string): string[] {
   return [...forms];
 }
 
+const INDEX: IndexedChunk[] = GONZO_CORPUS.filter((chunk) => !chunk.alwaysInclude).map(
+  (chunk) => {
+    const keywords = new Set<string>();
+    const phrases = new Set<string>();
+
+    for (const keyword of chunk.keywords) {
+      const normalized = normalize(keyword).trim();
+      if (!normalized) continue;
+      if (normalized.includes(" ")) {
+        phrases.add(normalized);
+        for (const part of normalized.split(/\s+/)) {
+          if (part.length > 1) keywords.add(part);
+        }
+      } else {
+        keywords.add(normalized);
+      }
+    }
+
+    return {
+      chunk,
+      keywords,
+      phrases,
+      topicTokens: new Set(tokenize(chunk.topic)),
+      contentTokens: new Set(tokenize(chunk.content)),
+      paddedContent: ` ${normalize(chunk.content)} `,
+      paddedTopic: ` ${normalize(chunk.topic)} `,
+    };
+  },
+);
+
 function expandQuery(tokens: string[], raw: string): { tokens: string[]; phrases: string[] } {
   const phrases: string[] = [];
   const lowered = normalize(raw);
+  const padded = ` ${lowered} `;
   const expanded = tokens.flatMap(withInflections);
 
   for (const [alias, targets] of Object.entries(QUERY_ALIASES)) {
+    const hit = alias.includes(" ")
+      ? containsPhrase(padded, alias)
+      : tokens.includes(alias);
+
+    if (!hit) continue;
+
     if (alias.includes(" ")) {
-      if (lowered.includes(alias)) {
-        phrases.push(alias);
-        expanded.push(...alias.split(" "));
-        expanded.push(...targets.flatMap((target) => target.split(" ")));
-        phrases.push(...targets.filter((target) => target.includes(" ")));
-      }
-      continue;
+      phrases.push(alias);
+      expanded.push(...alias.split(" "));
     }
-    if (tokens.includes(alias)) {
-      for (const target of targets) {
-        if (target.includes(" ")) phrases.push(target);
-        expanded.push(...target.split(" "));
-      }
+
+    for (const target of targets) {
+      if (target.includes(" ")) phrases.push(target);
+      expanded.push(...target.split(" "));
     }
   }
 
-  if (lowered.includes("fear and loathing")) {
+  if (containsPhrase(padded, "fear and loathing")) {
     phrases.push("fear and loathing");
-    if (lowered.includes("campaign trail") || /\bcampaign\b/.test(lowered)) {
+    if (containsPhrase(padded, "campaign trail") || /\bcampaign\b/.test(lowered)) {
       phrases.push("campaign trail");
       expanded.push("1972", "mcgovern", "campaign", "politics");
-    } else if (lowered.includes("las vegas") || /\bvegas\b/.test(lowered)) {
+    } else if (containsPhrase(padded, "las vegas") || tokens.includes("vegas")) {
       expanded.push("vegas", "desert", "mint");
     } else {
-      expanded.push("loathing", "american dream");
+      expanded.push("loathing");
     }
   }
 
   return { tokens: unique(expanded.filter(Boolean)), phrases: unique(phrases) };
 }
 
-function wordBoundaryContains(haystack: string, needle: string): boolean {
-  if (!needle) return false;
-  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(haystack);
-}
-
-function scoreChunk(
+function scoreIndexed(
   tokens: string[],
   phrases: string[],
-  chunk: CorpusChunk,
+  entry: IndexedChunk,
+  allowGenericIdentity: boolean,
 ): number {
-  const keywordField = chunk.keywords.join(" ").toLowerCase();
-  const topicField = chunk.topic.toLowerCase();
-  const contentField = chunk.content.toLowerCase();
   let score = 0;
 
   for (const phrase of phrases) {
-    if (chunk.keywords.some((keyword) => keyword.toLowerCase() === phrase)) score += 12;
-    else if (wordBoundaryContains(keywordField, phrase)) score += 8;
-    if (wordBoundaryContains(topicField, phrase)) score += 6;
-    if (wordBoundaryContains(contentField, phrase)) score += 3;
+    if (entry.phrases.has(phrase) || entry.keywords.has(phrase)) score += 12;
+    else if (containsPhrase(entry.paddedTopic, phrase)) score += 6;
+    else if (containsPhrase(entry.paddedContent, phrase)) score += 3;
   }
 
   for (const token of tokens) {
-    if (chunk.keywords.some((keyword) => keyword.toLowerCase() === token)) {
+    if (!allowGenericIdentity && GENERIC_IDENTITY_TOKENS.has(token)) {
+      continue;
+    }
+
+    if (entry.keywords.has(token)) {
       score += 6;
       continue;
     }
-    if (chunk.keywords.some((keyword) => wordBoundaryContains(keyword, token))) {
-      score += 4;
+    if (entry.topicTokens.has(token)) {
+      score += 3;
+      continue;
     }
-    if (wordBoundaryContains(topicField, token)) score += 3;
-    if (wordBoundaryContains(contentField, token)) score += 1;
+    if (entry.contentTokens.has(token)) {
+      score += 1;
+    }
   }
 
-  return score * (chunk.weight ?? 1);
+  return score * (entry.chunk.weight ?? 1);
 }
 
-function minimumScore(topScore: number): number {
-  if (topScore >= 12) return 3;
-  if (topScore >= 6) return 2;
+function minimumScore(topScore: number, limit: number): number {
+  if (limit >= 8) return 1;
+  if (topScore >= 12) return 4;
+  if (topScore >= 6) return 3;
   return 1;
 }
 
-export function retrieveDetailed(
-  query: string,
-  limit = 8,
-): RetrievalResult {
+function isIdentityQuery(raw: string, specificTokens: string[]): boolean {
+  if (IDENTITY_QUERY_RE.test(raw.trim())) return true;
+  return specificTokens.length === 0;
+}
+
+export type RetrievalHit = {
+  chunk: CorpusChunk;
+  score: number;
+};
+
+export type RetrievalResult = {
+  query: string;
+  tokens: string[];
+  phrases: string[];
+  hits: RetrievalHit[];
+  alwaysIncluded: CorpusChunk[];
+};
+
+export function retrieveDetailed(query: string, limit = 8): RetrievalResult {
   const rawTokens = tokenize(query);
   const { tokens, phrases } = expandQuery(rawTokens, query);
-  const alwaysIncluded = GONZO_CORPUS.filter((chunk) => chunk.alwaysInclude);
+  const specificTokens = tokens.filter((token) => !GENERIC_IDENTITY_TOKENS.has(token));
+  const identityQuery = isIdentityQuery(query, specificTokens);
 
   if (tokens.length === 0 && phrases.length === 0) {
-    const fallback = ["bio-identity", "theme-gonzo-defined", "work-vegas"]
-      .map((id) => CORPUS_BY_ID.get(id))
-      .filter((chunk): chunk is CorpusChunk => Boolean(chunk));
-
     return {
       query,
       tokens,
       phrases,
-      hits: fallback.map((chunk) => ({ chunk, score: 0 })),
-      alwaysIncluded,
+      hits: IDENTITY_FALLBACK.map((chunk) => ({ chunk, score: 0 })),
+      alwaysIncluded: ALWAYS_INCLUDED,
     };
   }
 
-  const ranked = GONZO_CORPUS.filter((chunk) => !chunk.alwaysInclude)
-    .map((chunk) => ({ chunk, score: scoreChunk(tokens, phrases, chunk) }))
+  const ranked = INDEX.map((entry) => ({
+    chunk: entry.chunk,
+    score: scoreIndexed(tokens, phrases, entry, identityQuery),
+  }))
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id));
 
+  if (identityQuery && !ranked.some((hit) => hit.chunk.id === "bio-identity")) {
+    const identity = CORPUS_BY_ID.get("bio-identity");
+    if (identity) ranked.unshift({ chunk: identity, score: 20 });
+  }
+
   const topScore = ranked[0]?.score ?? 0;
-  const filtered = ranked.filter(({ score }) => score >= minimumScore(topScore));
+  const filtered = ranked.filter(({ score }) => score >= minimumScore(topScore, limit));
 
   return {
     query,
     tokens,
     phrases,
     hits: filtered.slice(0, limit),
-    alwaysIncluded,
+    alwaysIncluded: ALWAYS_INCLUDED,
   };
 }
 
