@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/lib/gonzo/retrieve.test.ts"
+    "test": "tsx --test src/lib/gonzo/retrieve.test.ts src/lib/gonzo/synthesize.test.ts"
   },
   "dependencies": {
     "@ai-sdk/huggingface": "^2.0.30",

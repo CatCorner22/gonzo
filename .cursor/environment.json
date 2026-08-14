@@ -1,0 +1,17 @@
+{
+  "name": "Gonzo Engine",
+  "install": "npm install",
+  "start": "cp -n .env.example .env.local 2>/dev/null || true; grep -q GONZO_DEMO_MODE .env.local 2>/dev/null || echo 'GONZO_DEMO_MODE=true' >> .env.local",
+  "terminals": [
+    {
+      "name": "gonzo-dev",
+      "command": "npm run dev"
+    }
+  ],
+  "ports": [
+    {
+      "name": "next",
+      "port": 3000
+    }
+  ]
+}

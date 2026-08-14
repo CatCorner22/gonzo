@@ -9,29 +9,15 @@ import {
 import { getEngineHealth } from "@/lib/gonzo/health";
 import { getConfiguredProvider, getGonzoModel } from "@/lib/gonzo/model";
 import { buildGonzoSystemPrompt, extractUserTexts } from "@/lib/gonzo/persona";
-import { buildRetrievalQuery, retrieveDetailed } from "@/lib/gonzo/retrieve";
+import { buildRetrievalQuery } from "@/lib/gonzo/retrieve";
+import { synthesizeGonzoReply } from "@/lib/gonzo/synthesize";
 
 export const maxDuration = 60;
 
-function buildDemoReply(latestMessage: string): string {
-  const detail = retrieveDetailed(latestMessage, 4);
-  const topics = detail.hits.map((hit) => hit.chunk.topic).join("; ");
-
-  return [
-    "Listen — the wires are down and I'm running on backup juice, so this is a dispatch from the bunker, not the full satellite feed.",
-    "",
-    `You asked about "${latestMessage.trim()}". The Gonzo engine pulled context on: ${topics || "the general madness"}.`,
-    "",
-    "In character I'd tell you the American Dream didn't die — it was dragged behind a convertible until it confessed to being a focus group. But you'll need an API key in .env.local (AI_GATEWAY_API_KEY or HF_TOKEN) before this typewriter gets its full voltage back.",
-    "",
-    "Remove GONZO_DEMO_MODE or add a real key and restart the dev server for live Gonzo prose.",
-  ].join("\n");
-}
-
 function demoStreamResponse(messages: UIMessage[]) {
   const latest = extractUserTexts(messages).at(-1) ?? "";
-  const text = buildDemoReply(latest);
-  const messageId = "demo-text";
+  const text = synthesizeGonzoReply(latest);
+  const messageId = "gonzo-synth";
 
   return createUIMessageStreamResponse({
     stream: createUIMessageStream({
@@ -39,7 +25,7 @@ function demoStreamResponse(messages: UIMessage[]) {
       execute({ writer }) {
         writer.write({ type: "text-start", id: messageId });
 
-        const chunkSize = 28;
+        const chunkSize = 22;
         for (let i = 0; i < text.length; i += chunkSize) {
           writer.write({
             type: "text-delta",

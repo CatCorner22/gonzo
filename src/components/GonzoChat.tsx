@@ -114,7 +114,7 @@ export function GonzoChat() {
 
       {health?.demoMode && (
         <div className="border-b border-amber-700/30 bg-amber-900/20 px-4 py-2 font-mono text-xs text-amber-200/70">
-          DEMO MODE — stub streaming only. Add an API key for live Gonzo prose.
+          DEMO MODE — corpus-backed Gonzo synthesis (no LLM). Add AI_GATEWAY_API_KEY for live prose.
         </div>
       )}
 
