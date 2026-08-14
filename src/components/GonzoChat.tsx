@@ -14,10 +14,12 @@ function getMessageText(message: {
 }
 
 const STARTERS = [
+  "Who are you, and how did Gonzo start?",
   "What happened to the American Dream?",
-  "Describe a day at the Kentucky Derby.",
+  "Take me through the 1972 campaign.",
+  "Who was Oscar Acosta, really?",
+  "Describe Owl Farm after midnight.",
   "Is Las Vegas still bat country?",
-  "Give me advice for surviving an election year.",
 ];
 
 export function GonzoChat() {
@@ -80,9 +82,9 @@ export function GonzoChat() {
               The typewriter is warm.
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-amber-100/70">
-              Ask about politics, Vegas, the Derby, the American Dream, or
-              anything that deserves a savage first-person dispatch. The engine
-              grounds replies in Gonzo style notes and persona context.
+              Ask about the books, the trail, Owl Farm, Steadman, Acosta, Nixon,
+              or the Dream. The engine retrieves from a large Gonzo knowledge
+              base and keeps the voice locked — the style does not wander.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {STARTERS.map((starter) => (

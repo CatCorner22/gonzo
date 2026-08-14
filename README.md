@@ -19,7 +19,9 @@ flowchart LR
 ## Features
 
 - **Persona engine** — first-person Hunter S. Thompson voice with Gonzo journalism rules
-- **RAG grounding** — keyword retrieval over style exemplars, themes, and biographical anchors
+- **RAG grounding** — phrase/alias retrieval over 90+ factual and style chunks (life, works, people, places, politics, themes)
+- **Voice lock** — core style chunks are always injected; the prose stance does not drift
+- **Knowledge debug** — `GET /api/knowledge?q=nixon` shows what the retriever selected
 - **Streaming chat** — real-time responses via AI SDK `useChat`
 - **Dual provider support** — Vercel AI Gateway (recommended) or Hugging Face Inference
 - **Gonzo UI** — dark amber/red aesthetic with conversation starters
@@ -50,25 +52,28 @@ Gateway is preferred when both keys are set.
 
 ```
 src/
-├── app/
-│   ├── api/chat/route.ts    # Streaming chat endpoint
-│   ├── layout.tsx
-│   └── page.tsx
-├── components/
-│   └── GonzoChat.tsx        # Chat UI
+├── app/api/
+│   ├── chat/route.ts        # Streaming chat
+│   └── knowledge/route.ts   # Retrieval debugger
+├── components/GonzoChat.tsx
 └── lib/gonzo/
-    ├── corpus.ts            # Style & context chunks
-    ├── retrieve.ts          # Keyword RAG
-    ├── persona.ts           # System prompt builder
-    └── model.ts             # Provider configuration
+    ├── corpus/              # Extensive KB by category
+    ├── retrieve.ts          # Phrase + alias RAG
+    ├── persona.ts
+    └── model.ts
+```
+
+```bash
+npm test
+curl "http://localhost:3000/api/knowledge?q=owl%20farm"
 ```
 
 ## Extending the engine
 
-- **Add corpus chunks** in `src/lib/gonzo/corpus.ts` — each chunk has `keywords` for retrieval
-- **Tune persona rules** in `src/lib/gonzo/persona.ts`
-- **Swap models** via env vars without code changes
-- **Upgrade RAG** — replace keyword scoring in `retrieve.ts` with embeddings when you add an embedding provider
+- Add chunks under `src/lib/gonzo/corpus/` — keywords, optional `weight`, `alwaysInclude` for voice lock
+- Tune retrieval aliases in `src/lib/gonzo/retrieve.ts`
+- Swap models via env vars
+- Upgrade later to embeddings if you add an embedding provider
 
 ## Deploy
 

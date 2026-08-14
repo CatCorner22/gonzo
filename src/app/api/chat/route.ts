@@ -5,8 +5,9 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from "ai";
-import { buildGonzoSystemPrompt, extractLatestUserText } from "@/lib/gonzo/persona";
 import { getConfiguredProvider, getGonzoModel } from "@/lib/gonzo/model";
+import { buildGonzoSystemPrompt, extractUserTexts } from "@/lib/gonzo/persona";
+import { buildRetrievalQuery } from "@/lib/gonzo/retrieve";
 
 export const maxDuration = 60;
 
@@ -23,15 +24,15 @@ export async function POST(req: Request) {
     }
 
     const { messages }: { messages: UIMessage[] } = await req.json();
-    const latestUserMessage = extractLatestUserText(messages);
-    const system = buildGonzoSystemPrompt(latestUserMessage);
+    const retrievalQuery = buildRetrievalQuery(extractUserTexts(messages));
+    const system = buildGonzoSystemPrompt(retrievalQuery);
 
     const result = streamText({
       model: getGonzoModel(),
       system,
       messages: await convertToModelMessages(messages),
-      temperature: 0.95,
-      maxOutputTokens: 1200,
+      temperature: 0.9,
+      maxOutputTokens: 1400,
     });
 
     return createUIMessageStreamResponse({
