@@ -39,6 +39,16 @@ assertIncludes("What books did he write?", "work-catalog");
 assertIncludes("Tom Wolfe and New Journalism", "people-wolfe");
 assertIncludes("IBM Selectric night writing", "bio-habits");
 
+const nixonHits = retrieveDetailed("What about Nixon?", 10).hits.map((h) => h.chunk.id);
+assert.ok(!nixonHits.includes("bio-big-sur"), `Nixon query polluted: ${nixonHits.join(", ")}`);
+assert.ok(!nixonHits.includes("bio-puerto-rico"), `Nixon query polluted: ${nixonHits.join(", ")}`);
+
+const campaign = retrieveDetailed("Fear and Loathing on the Campaign Trail", 5);
+assert.equal(campaign.hits[0]?.chunk.id, "work-campaign-72");
+
+const aboutNixon = buildRetrievalQuery(["What about Nixon?"]);
+assert.equal(aboutNixon.toLowerCase(), "nixon?");
+
 const vegas = retrieveDetailed("Is Las Vegas still bat country?");
 assert.ok(
   vegas.hits.some((hit) => hit.chunk.id === "work-vegas" || hit.chunk.id === "place-vegas"),

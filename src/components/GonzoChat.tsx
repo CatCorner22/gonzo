@@ -2,7 +2,15 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type EngineHealth = {
+  ok: boolean;
+  provider: string;
+  demoMode: boolean;
+  setup: string;
+  corpus: { chunks: number };
+};
 
 function getMessageText(message: {
   parts: { type: string; text?: string }[];
@@ -11,6 +19,21 @@ function getMessageText(message: {
     .filter((part) => part.type === "text" && part.text)
     .map((part) => part.text!)
     .join("");
+}
+
+function parseChatError(message: string): string {
+  try {
+    const parsed = JSON.parse(message) as { error?: string };
+    if (parsed.error) return parsed.error;
+  } catch {
+    // not JSON
+  }
+
+  if (message.includes("503") || message.includes("API key")) {
+    return "No API key configured. Add AI_GATEWAY_API_KEY or HF_TOKEN to .env.local and restart the dev server. Or set GONZO_DEMO_MODE=true to test without a key.";
+  }
+
+  return message;
 }
 
 const STARTERS = [
@@ -24,12 +47,23 @@ const STARTERS = [
 
 export function GonzoChat() {
   const [input, setInput] = useState("");
+  const [health, setHealth] = useState<EngineHealth | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
-  });
+  const transport = useMemo(
+    () => new DefaultChatTransport({ api: "/api/chat" }),
+    [],
+  );
+
+  const { messages, sendMessage, status, error } = useChat({ transport });
 
   const isBusy = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((res) => res.json())
+      .then((data: EngineHealth) => setHealth(data))
+      .catch(() => setHealth(null));
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -67,10 +101,22 @@ export function GonzoChat() {
             </p>
           </div>
           <div className="hidden rounded-full border border-red-500/30 bg-red-950/30 px-4 py-2 font-mono text-xs text-red-300 sm:block">
-            {isBusy ? "TRANSMITTING..." : "ON THE LINE"}
+            {isBusy ? "TRANSMITTING..." : health?.ok ? "ON THE LINE" : "OFF THE AIR"}
           </div>
         </div>
       </header>
+
+      {health && !health.ok && (
+        <div className="border-b border-amber-800/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100/80">
+          {health.setup}
+        </div>
+      )}
+
+      {health?.demoMode && (
+        <div className="border-b border-amber-700/30 bg-amber-900/20 px-4 py-2 font-mono text-xs text-amber-200/70">
+          DEMO MODE — stub streaming only. Add an API key for live Gonzo prose.
+        </div>
+      )}
 
       <div
         ref={scrollRef}
@@ -83,8 +129,9 @@ export function GonzoChat() {
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-amber-100/70">
               Ask about the books, the trail, Owl Farm, Steadman, Acosta, Nixon,
-              or the Dream. The engine retrieves from a large Gonzo knowledge
-              base and keeps the voice locked — the style does not wander.
+              or the Dream. The engine retrieves from{" "}
+              {health?.corpus.chunks ?? "100+"} Gonzo knowledge chunks and keeps
+              the voice locked.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {STARTERS.map((starter) => (
@@ -103,6 +150,7 @@ export function GonzoChat() {
 
         {messages.map((message) => {
           const text = getMessageText(message);
+          if (!text && message.role === "assistant") return null;
           const isUser = message.role === "user";
 
           return (
@@ -135,9 +183,7 @@ export function GonzoChat() {
 
         {error && (
           <div className="rounded-xl border border-red-700/50 bg-red-950/30 px-4 py-3 text-sm text-red-200">
-            {error.message.includes("503") || error.message.includes("API key")
-              ? "No API key configured. Add AI_GATEWAY_API_KEY or HF_TOKEN to .env.local and restart the dev server."
-              : error.message}
+            {parseChatError(error.message)}
           </div>
         )}
       </div>

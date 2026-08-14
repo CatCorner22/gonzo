@@ -61,6 +61,9 @@ const STOP_WORDS = new Set([
   "these",
   "those",
   "am",
+  "about",
+  "around",
+  "because",
   "into",
   "through",
   "during",
@@ -196,21 +199,45 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+const INFLECTABLE = new Set([
+  "die",
+  "write",
+  "wrote",
+  "book",
+  "run",
+  "go",
+  "do",
+  "say",
+  "tell",
+  "read",
+  "live",
+]);
+
 function withInflections(token: string): string[] {
   const forms = new Set([token]);
-  if (token.endsWith("ed") && token.length > 4) {
-    forms.add(token.slice(0, -2));
+
+  if (token.endsWith("ies") && token.length > 4) {
+    forms.add(`${token.slice(0, -3)}y`);
+  }
+  if (token.endsWith("s") && !token.endsWith("ss") && token.length > 4) {
     forms.add(token.slice(0, -1));
   }
-  if (token.endsWith("s") && !token.endsWith("ss") && token.length > 3) {
-    forms.add(token.slice(0, -1));
+  if (token.endsWith("ed") && token.length > 4) {
+    forms.add(token.slice(0, -2));
+    if (token.endsWith("ied")) {
+      forms.add(`${token.slice(0, -3)}y`);
+    }
   }
   if (token.endsWith("ing") && token.length > 5) {
     forms.add(token.slice(0, -3));
   }
-  forms.add(`${token}s`);
-  forms.add(`${token}ed`);
-  forms.add(`${token}d`);
+
+  if (INFLECTABLE.has(token)) {
+    forms.add(`${token}s`);
+    forms.add(`${token}ed`);
+    forms.add(`${token}d`);
+  }
+
   return [...forms];
 }
 
@@ -239,7 +266,14 @@ function expandQuery(tokens: string[], raw: string): { tokens: string[]; phrases
 
   if (lowered.includes("fear and loathing")) {
     phrases.push("fear and loathing");
-    expanded.push("vegas", "campaign", "loathing");
+    if (lowered.includes("campaign trail") || /\bcampaign\b/.test(lowered)) {
+      phrases.push("campaign trail");
+      expanded.push("1972", "mcgovern", "campaign", "politics");
+    } else if (lowered.includes("las vegas") || /\bvegas\b/.test(lowered)) {
+      expanded.push("vegas", "desert", "mint");
+    } else {
+      expanded.push("loathing", "american dream");
+    }
   }
 
   return { tokens: unique(expanded.filter(Boolean)), phrases: unique(phrases) };
@@ -283,6 +317,12 @@ function scoreChunk(
   return score * (chunk.weight ?? 1);
 }
 
+function minimumScore(topScore: number): number {
+  if (topScore >= 12) return 3;
+  if (topScore >= 6) return 2;
+  return 1;
+}
+
 export function retrieveDetailed(
   query: string,
   limit = 8,
@@ -310,11 +350,14 @@ export function retrieveDetailed(
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id));
 
+  const topScore = ranked[0]?.score ?? 0;
+  const filtered = ranked.filter(({ score }) => score >= minimumScore(topScore));
+
   return {
     query,
     tokens,
     phrases,
-    hits: ranked.slice(0, limit),
+    hits: filtered.slice(0, limit),
     alwaysIncluded,
   };
 }
@@ -343,6 +386,11 @@ export function buildRetrievalQuery(userMessages: string[]): string {
   if (recent.length === 0) return "";
 
   const latest = recent[recent.length - 1] ?? "";
+  const aboutMatch = latest.match(/^(?:what|how)\s+about\s+(.+)/i);
+  if (aboutMatch?.[1]) {
+    return aboutMatch[1].trim();
+  }
+
   if (recent.length === 1) return latest;
 
   if (FOLLOW_UP_RE.test(latest.trim()) || tokenize(latest).length < 3) {
