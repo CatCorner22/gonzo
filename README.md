@@ -19,12 +19,12 @@ flowchart LR
 ## Features
 
 - **Persona engine** — first-person Hunter S. Thompson voice with Gonzo journalism rules
-- **RAG grounding** — phrase/alias retrieval over 90+ factual and style chunks (life, works, people, places, politics, themes)
-- **Voice lock** — core style chunks are always injected; the prose stance does not drift
-- **Knowledge debug** — `GET /api/knowledge?q=nixon` shows what the retriever selected
-- **Streaming chat** — real-time responses via AI SDK `useChat`
-- **Dual provider support** — Vercel AI Gateway (recommended) or Hugging Face Inference
-- **Gonzo UI** — dark amber/red aesthetic with conversation starters
+- **RAG grounding** — phrase/alias retrieval over 111 factual and style chunks
+- **Voice lock** — core style chunks always injected; the prose stance does not drift
+- **Corpus synthesizer** — demo mode composes in-character replies from retrieved knowledge (no LLM)
+- **Live LLM mode** — Vercel AI Gateway or Hugging Face when `AI_GATEWAY_API_KEY` / `HF_TOKEN` is set
+- **Knowledge debug** — `GET /api/knowledge?q=nixon` shows retriever output
+- **Health check** — `GET /api/health` reports provider + corpus status
 
 ## Quick start
 
@@ -45,8 +45,9 @@ Open [http://localhost:3000](http://localhost:3000).
 | `AI_GATEWAY_MODEL` | No | Model ID (default: `anthropic/claude-sonnet-4.5`) |
 | `HF_TOKEN` | Alternative | Hugging Face token with Inference API access |
 | `HF_MODEL` | No | HF model ID (default: `meta-llama/Meta-Llama-3.1-8B-Instruct`) |
+| `GONZO_DEMO_MODE` | No | `true` = corpus synthesizer without an LLM (default in cloud env) |
 
-Gateway is preferred when both keys are set.
+Gateway is preferred when both keys are set. With no key and `GONZO_DEMO_MODE=true`, the engine still streams Gonzo-style replies synthesized from the knowledge base.
 
 ## Project structure
 
@@ -59,6 +60,7 @@ src/
 └── lib/gonzo/
     ├── corpus/              # Extensive KB by category
     ├── retrieve.ts          # Phrase + alias RAG
+    ├── synthesize.ts        # Demo-mode Gonzo reply composer
     ├── persona.ts
     └── model.ts
 ```
