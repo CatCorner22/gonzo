@@ -19,7 +19,7 @@ flowchart LR
 ## Features
 
 - **Persona engine** — first-person Hunter S. Thompson voice with Gonzo journalism rules
-- **RAG grounding** — phrase/alias retrieval over 111 factual and style chunks
+- **RAG grounding** — phrase/alias retrieval over 174 factual and style chunks
 - **Voice lock** — core style chunks always injected; the prose stance does not drift
 - **Corpus synthesizer** — demo mode composes in-character replies from retrieved knowledge (no LLM)
 - **Live LLM mode** — Vercel AI Gateway or Hugging Face when `AI_GATEWAY_API_KEY` / `HF_TOKEN` is set

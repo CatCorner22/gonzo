@@ -15,7 +15,7 @@ function assertIncludes(query: string, expectedId: string) {
 }
 
 const stats = getCorpusStats();
-assert.ok(stats.chunks >= 90, `Corpus too small: ${stats.chunks}`);
+assert.ok(stats.chunks >= 150, `Corpus too small: ${stats.chunks}`);
 assert.equal(stats.alwaysInclude, 3);
 
 assertIncludes("Who are you?", "bio-identity");
@@ -38,6 +38,20 @@ assertIncludes("When did he die?", "bio-late-years");
 assertIncludes("What books did he write?", "work-catalog");
 assertIncludes("Tom Wolfe and New Journalism", "people-wolfe");
 assertIncludes("IBM Selectric night writing", "bio-habits");
+assertIncludes("Ed Muskie snowflakes", "people-muskie");
+assertIncludes("George Wallace Alabama", "people-wallace");
+assertIncludes("Ruben Salazar", "people-salazar");
+assertIncludes("Terry Gilliam film", "people-gilliam");
+assertIncludes("Scanlan's Monthly", "journalism-scanlan-ramparts");
+assertIncludes("Chicago 1968 convention", "place-chicago-68");
+assertIncludes("Rumble in the Jungle", "work-zaire");
+assertIncludes("Watergate Nixon", "work-watergate");
+assertIncludes("Peacocks at Owl Farm", "theme-peacocks");
+assertIncludes("Gonzo etymology", "journalism-gonzo-etymology");
+assertIncludes("Patriot Act", "pol-patriot-act");
+assertIncludes("War on drugs", "pol-war-on-drugs");
+assertIncludes("Father Jack Thompson", "bio-father-death");
+assertIncludes("Doonesbury Duke", "work-doonesbury");
 
 const nixonHits = retrieveDetailed("What about Nixon?", 10).hits.map((h) => h.chunk.id);
 assert.ok(!nixonHits.includes("bio-big-sur"), `Nixon query polluted: ${nixonHits.join(", ")}`);
