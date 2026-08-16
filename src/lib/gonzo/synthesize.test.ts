@@ -5,10 +5,6 @@ import { followUpOffset, synthesizeGonzoReply } from "./synthesize";
 const nixon = synthesizeGonzoReply("Who was Nixon?");
 assert.match(nixon, /Nixon/i);
 assert.ok(nixon.length > 180);
-assert.ok(!nixon.includes("API key"));
-assert.ok(!nixon.includes("You asked about"));
-assert.ok(!nixon.includes("Start here:"));
-assert.ok(!nixon.includes("is the right alley"));
 
 const vegas = synthesizeGonzoReply("Tell me about Fear and Loathing in Las Vegas");
 assert.match(vegas, /Vegas|Las Vegas|American Dream/i);
@@ -34,5 +30,18 @@ assert.equal(followUpOffset(["Who was Oscar Acosta, really?", "tell me more"]), 
 const more = synthesizeGonzoReply("Who was Oscar Acosta, really?", 2);
 const firstAcosta = synthesizeGonzoReply("Who was Oscar Acosta, really?", 0);
 assert.notEqual(more, firstAcosta, "follow-up offset should change the reply");
+
+const longForm = synthesizeGonzoReply(
+  "Give me a long detailed dispatch about the McGovern Rolling Stone profile and the 1972 campaign trail",
+);
+assert.ok(longForm.length > 800, `Long-form reply too short: ${longForm.length}`);
+assert.match(longForm, /McGovern|campaign|Rolling Stone/i);
+const paragraphs = longForm.split("\n\n").filter(Boolean);
+assert.ok(paragraphs.length >= 5, `Expected 5+ paragraphs, got ${paragraphs.length}`);
+
+assert.ok(!nixon.includes("API key"));
+assert.ok(!nixon.includes("You asked about"));
+assert.ok(!nixon.includes("Start here:"));
+assert.ok(!nixon.includes("is the right alley"));
 
 console.log("synthesize.test.ts passed");

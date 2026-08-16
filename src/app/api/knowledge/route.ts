@@ -1,5 +1,6 @@
 import { getCorpusStats } from "@/lib/gonzo/corpus/index";
 import { retrieveDetailed } from "@/lib/gonzo/retrieve";
+import { semanticWeight } from "@/lib/gonzo/semantic";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -17,12 +18,15 @@ export async function GET(req: Request) {
     query: result.query,
     tokens: result.tokens,
     phrases: result.phrases,
+    semanticWeight: semanticWeight(query, result.tokens.length),
     alwaysIncluded: result.alwaysIncluded.map((chunk) => chunk.id),
     hits: result.hits.map((hit) => ({
       id: hit.chunk.id,
       topic: hit.chunk.topic,
       category: hit.chunk.category,
       score: hit.score,
+      keywordScore: hit.keywordScore,
+      semanticScore: hit.semanticScore,
     })),
   });
 }

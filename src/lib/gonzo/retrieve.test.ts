@@ -15,7 +15,7 @@ function assertIncludes(query: string, expectedId: string) {
 }
 
 const stats = getCorpusStats();
-assert.ok(stats.chunks >= 150, `Corpus too small: ${stats.chunks}`);
+assert.ok(stats.chunks >= 180, `Corpus too small: ${stats.chunks}`);
 assert.equal(stats.alwaysInclude, 3);
 
 assertIncludes("Who are you?", "bio-identity");
@@ -52,6 +52,25 @@ assertIncludes("Patriot Act", "pol-patriot-act");
 assertIncludes("War on drugs", "pol-war-on-drugs");
 assertIncludes("Father Jack Thompson", "bio-father-death");
 assertIncludes("Doonesbury Duke", "work-doonesbury");
+assertIncludes("McGovern Rolling Stone profile", "rs-mcgovern-profile");
+assertIncludes("Fear and Loathing Campaign Trail 2000", "rs-bush-2000");
+assertIncludes("Rolling Stone Watergate coverage", "rs-watergate-dispatch");
+assertIncludes("Wave speech American Dream", "rs-wave-speech");
+assertIncludes("McCain Rolling Stone 2000", "rs-mccain-2000");
+assertIncludes("Hey Rube ESPN columns", "rs-espn-hey-rube");
+
+const longQuery = retrieveDetailed(
+  "I have been reading about the nineteen seventies and I am curious how Hunter Thompson covered the McGovern campaign for Rolling Stone and what he thought about Nixon during that whole disastrous season when the country seemed to be eating itself",
+  8,
+);
+assert.ok(
+  longQuery.hits.some((h) => h.chunk.id === "rs-mcgovern-profile" || h.chunk.id === "rs-nixon-dispatch"),
+  `Long conversational query should hit RS campaign chunks: ${longQuery.hits.map((h) => h.chunk.id).join(", ")}`,
+);
+assert.ok(
+  longQuery.hits[0]?.semanticScore > 0 || longQuery.hits.some((h) => h.semanticScore > 0),
+  "Long query should activate semantic scoring",
+);
 
 const nixonHits = retrieveDetailed("What about Nixon?", 10).hits.map((h) => h.chunk.id);
 assert.ok(!nixonHits.includes("bio-big-sur"), `Nixon query polluted: ${nixonHits.join(", ")}`);

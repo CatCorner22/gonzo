@@ -76,7 +76,7 @@ export async function POST(req: Request) {
       system,
       messages: await convertToModelMessages(messages),
       temperature: 0.9,
-      maxOutputTokens: 1400,
+      maxOutputTokens: 3200,
     });
 
     return createUIMessageStreamResponse({

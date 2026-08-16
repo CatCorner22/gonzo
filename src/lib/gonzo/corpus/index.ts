@@ -7,6 +7,7 @@ import { EXPANDED_POLITICS_CHUNKS } from "./expanded-politics";
 import { EXPANDED_THEME_CHUNKS } from "./expanded-themes";
 import { EXPANDED_WORKS_CHUNKS } from "./expanded-works";
 import { JOURNALISM_CHUNKS } from "./journalism";
+import { ROLLING_STONE_PIECES_CHUNKS } from "./rolling-stone-pieces";
 import { PEOPLE_CHUNKS } from "./people";
 import { PLACES_CHUNKS } from "./places";
 import { POLITICS_CHUNKS } from "./politics";
@@ -21,6 +22,7 @@ export const GONZO_CORPUS: CorpusChunk[] = [
   ...EXPANDED_BIO_CHUNKS,
   ...WORKS_CHUNKS,
   ...EXPANDED_WORKS_CHUNKS,
+  ...ROLLING_STONE_PIECES_CHUNKS,
   ...PEOPLE_CHUNKS,
   ...CAMPAIGN_FIGURES_CHUNKS,
   ...PLACES_CHUNKS,

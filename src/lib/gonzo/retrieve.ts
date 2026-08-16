@@ -1,4 +1,5 @@
 import { CORPUS_BY_ID, GONZO_CORPUS } from "./corpus";
+import { semanticScores, semanticWeight } from "./semantic";
 import type { CorpusChunk } from "./types";
 
 const STOP_WORDS = new Set([
@@ -220,6 +221,22 @@ const QUERY_ALIASES: Record<string, string[]> = {
   "juan fitzgerald": ["juan", "memoir", "people-juan"],
   "virginia thompson": ["mother", "bio-virginia-mother"],
   streaking: ["super bowl", "work-super-bowl"],
+  "mcgovern profile": ["rs-mcgovern-profile", "mcgovern", "1972"],
+  "wave speech": ["rs-wave-speech", "american dream", "campaign"],
+  "high water mark": ["rs-wave-speech", "american dream"],
+  "fear and loathing 2000": ["rs-bush-2000", "bush", "gore"],
+  "fear and loathing 2004": ["rs-bush-2004", "bush", "kerry"],
+  "campaign trail 2000": ["rs-bush-2000", "2000 election"],
+  "campaign trail 2004": ["rs-bush-2004", "2004"],
+  "mccain profile": ["rs-mccain-2000", "mccain"],
+  "better than sex": ["rs-clinton-1992", "clinton"],
+  "hey rube": ["rs-espn-hey-rube", "espn", "sports"],
+  "examiner column": ["rs-examiner-column", "san francisco"],
+  "strange rumblings": ["rs-strange-rumblings", "salazar", "aztlan"],
+  "rolling stone watergate": ["rs-watergate-dispatch", "watergate"],
+  "rolling stone nixon": ["rs-nixon-dispatch", "nixon"],
+  "september 11": ["rs-911-column", "911", "patriot act"],
+  "9/11": ["rs-911-column", "911", "kingdom of fear"],
   suicide: ["death", "2005"],
   die: ["died", "death", "2005"],
   died: ["death", "2005"],
@@ -386,6 +403,7 @@ function scoreIndexed(
   phrases: string[],
   entry: IndexedChunk,
   allowGenericIdentity: boolean,
+  rawQuery: string,
 ): number {
   let score = 0;
 
@@ -413,6 +431,10 @@ function scoreIndexed(
     }
   }
 
+  if (/^who was\b/i.test(rawQuery.trim()) && entry.chunk.category === "people") {
+    score += 8;
+  }
+
   return score * (entry.chunk.weight ?? 1);
 }
 
@@ -431,6 +453,8 @@ function isIdentityQuery(raw: string, specificTokens: string[]): boolean {
 export type RetrievalHit = {
   chunk: CorpusChunk;
   score: number;
+  keywordScore: number;
+  semanticScore: number;
 };
 
 export type RetrievalResult = {
@@ -446,27 +470,31 @@ export function retrieveDetailed(query: string, limit = 8): RetrievalResult {
   const { tokens, phrases } = expandQuery(rawTokens, query);
   const specificTokens = tokens.filter((token) => !GENERIC_IDENTITY_TOKENS.has(token));
   const identityQuery = isIdentityQuery(query, specificTokens);
+  const semMap = semanticScores(query);
+  const semW = semanticWeight(query, tokens.length);
 
   if (tokens.length === 0 && phrases.length === 0) {
     return {
       query,
       tokens,
       phrases,
-      hits: IDENTITY_FALLBACK.map((chunk) => ({ chunk, score: 0 })),
+      hits: IDENTITY_FALLBACK.map((chunk) => ({ chunk, score: 0, keywordScore: 0, semanticScore: 0 })),
       alwaysIncluded: ALWAYS_INCLUDED,
     };
   }
 
-  const ranked = INDEX.map((entry) => ({
-    chunk: entry.chunk,
-    score: scoreIndexed(tokens, phrases, entry, identityQuery),
-  }))
-    .filter(({ score }) => score > 0)
+  const ranked = INDEX.map((entry) => {
+    const keywordScore = scoreIndexed(tokens, phrases, entry, identityQuery, query);
+    const semanticScore = (semMap.get(entry.chunk.id) ?? 0) * 24;
+    const score = keywordScore * (1 - semW) + semanticScore * semW;
+    return { chunk: entry.chunk, score, keywordScore, semanticScore };
+  })
+    .filter(({ score, keywordScore, semanticScore }) => score > 0 || keywordScore > 0 || semanticScore > 0)
     .sort((a, b) => b.score - a.score || a.chunk.id.localeCompare(b.chunk.id));
 
   if (identityQuery && !ranked.some((hit) => hit.chunk.id === "bio-identity")) {
     const identity = CORPUS_BY_ID.get("bio-identity");
-    if (identity) ranked.unshift({ chunk: identity, score: 20 });
+    if (identity) ranked.unshift({ chunk: identity, score: 20, keywordScore: 20, semanticScore: 0 });
   }
 
   const topScore = ranked[0]?.score ?? 0;

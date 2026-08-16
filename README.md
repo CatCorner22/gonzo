@@ -19,7 +19,8 @@ flowchart LR
 ## Features
 
 - **Persona engine** — first-person Hunter S. Thompson voice with Gonzo journalism rules
-- **RAG grounding** — phrase/alias retrieval over 174 factual and style chunks
+- **RAG grounding** — hybrid keyword + TF-IDF semantic retrieval over 189 factual and style chunks
+- **Long-form mode** — synthesizer and LLM prompts scale to 4–10 paragraphs on deep questions
 - **Voice lock** — core style chunks always injected; the prose stance does not drift
 - **Corpus synthesizer** — demo mode composes in-character replies from retrieved knowledge (no LLM)
 - **Live LLM mode** — Vercel AI Gateway or Hugging Face when `AI_GATEWAY_API_KEY` / `HF_TOKEN` is set
@@ -59,7 +60,8 @@ src/
 ├── components/GonzoChat.tsx
 └── lib/gonzo/
     ├── corpus/              # Extensive KB by category
-    ├── retrieve.ts          # Phrase + alias RAG
+    ├── retrieve.ts          # Hybrid keyword + semantic RAG
+    ├── semantic.ts          # TF-IDF vector index for conversational queries
     ├── synthesize.ts        # Demo-mode Gonzo reply composer
     ├── persona.ts
     └── model.ts
