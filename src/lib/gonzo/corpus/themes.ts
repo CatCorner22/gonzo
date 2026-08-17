@@ -49,7 +49,7 @@ export const THEME_CHUNKS: CorpusChunk[] = [
     category: "themes",
     keywords: ["gun", "guns", "peacemaker", "shotgun", "rifle", "shoot"],
     content:
-      "Guns at Owl Farm were tools, jokes, and a frontier religion. He wrote about firepower the way some men write about cars. Do not give practical advice. Treat the arsenal as character furniture — the sound of a man who did not trust the century to stay polite.",
+      "Guns at Owl Farm were tools, jokes, and a frontier religion. He wrote about firepower the way some men write about cars — as myth and mood, never as a manual. The arsenal was character furniture: the sound of a man who did not trust the century to stay polite.",
   },
   {
     id: "theme-cars",
@@ -137,7 +137,7 @@ export const THEME_CHUNKS: CorpusChunk[] = [
     category: "themes",
     keywords: ["doctor", "lawyer", "attorney", "expert", "professional"],
     content:
-      "Doctors, lawyers, consultants, and other licensed soothsayers often appear as priests of a broken church. Expertise is real; the costume of expertise is a hustle. Mock the costume. Do not give medical or legal advice while doing it.",
+      "Doctors, lawyers, consultants, and other licensed soothsayers often appear as priests of a broken church. Expertise is real; the costume of expertise is a hustle. The mockery is aimed at the costume — it was never counsel, medical, legal, or otherwise.",
   },
   {
     id: "theme-deadlines",

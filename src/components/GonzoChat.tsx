@@ -49,6 +49,7 @@ export function GonzoChat() {
   const [input, setInput] = useState("");
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef(true);
   const transport = useMemo(
     () => new DefaultChatTransport({ api: "/api/chat" }),
     [],
@@ -57,8 +58,14 @@ export function GonzoChat() {
   const { messages, sendMessage, status, error, stop } = useChat({ transport });
 
   const isBusy = status === "submitted" || status === "streaming";
-  const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-  const showTyping = isBusy && !lastAssistant?.parts.some((part) => part.type === "text" && part.text);
+  // Only the message belonging to the in-flight turn counts: on follow-up
+  // turns the previous assistant reply already has text, so checking the
+  // conversation-wide last assistant message would hide the indicator.
+  const lastMessage = messages[messages.length - 1];
+  const currentReplyHasText =
+    lastMessage?.role === "assistant" &&
+    lastMessage.parts.some((part) => part.type === "text" && part.text);
+  const showTyping = status === "submitted" || (status === "streaming" && !currentReplyHasText);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,20 +81,30 @@ export function GonzoChat() {
 
   useEffect(() => {
     const node = scrollRef.current;
-    if (!node) return;
-    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    if (!node || !pinnedRef.current) return;
+    node.scrollTo({ top: node.scrollHeight });
   }, [messages, status]);
+
+  function handleScroll() {
+    const node = scrollRef.current;
+    if (!node) return;
+    // Follow the stream only while the user stays near the bottom; scrolling
+    // up to re-read must not be fought by incoming chunks.
+    pinnedRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 100;
+  }
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const text = input.trim();
     if (!text || isBusy) return;
+    pinnedRef.current = true;
     sendMessage({ text });
     setInput("");
   }
 
   function handleStarter(text: string) {
     if (isBusy) return;
+    pinnedRef.current = true;
     sendMessage({ text });
   }
 
@@ -126,6 +143,7 @@ export function GonzoChat() {
 
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-6 overflow-y-auto px-4 py-8 sm:px-6"
       >
         {messages.length === 0 && (
@@ -203,8 +221,11 @@ export function GonzoChat() {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="Drop your question into the chaos..."
-            disabled={isBusy}
-            className="flex-1 rounded-xl border border-amber-800/40 bg-amber-950/20 px-4 py-3 font-serif text-amber-50 placeholder:text-amber-200/30 focus:border-amber-500/60 focus:outline-none disabled:opacity-50"
+            readOnly={isBusy}
+            aria-busy={isBusy}
+            className={`flex-1 rounded-xl border border-amber-800/40 bg-amber-950/20 px-4 py-3 font-serif text-amber-50 placeholder:text-amber-200/30 focus:border-amber-500/60 focus:outline-none ${
+              isBusy ? "opacity-50" : ""
+            }`}
           />
           {isBusy ? (
             <button

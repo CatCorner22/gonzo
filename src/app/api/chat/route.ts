@@ -14,14 +14,22 @@ import { followUpOffset, synthesizeGonzoReply } from "@/lib/gonzo/synthesize";
 
 export const maxDuration = 60;
 
+const MAX_MESSAGES = 200;
+const MAX_MESSAGE_CHARS = 32_000;
+
 function shouldUseSynthesizer(): boolean {
+  if (process.env.GONZO_DEMO_MODE === "true") return true;
   return (
     getConfiguredProvider() === "none" && process.env.GONZO_DEMO_MODE !== "false"
   );
 }
 
-function demoStreamResponse(query: string, offset: number, messages: UIMessage[]) {
-  const text = synthesizeGonzoReply(query, offset);
+function badRequest(error: string): Response {
+  return Response.json({ error }, { status: 400 });
+}
+
+function demoStreamResponse(query: string, followUpDepth: number, messages: UIMessage[]) {
+  const text = synthesizeGonzoReply(query, followUpDepth);
   const messageId = crypto.randomUUID();
 
   return createUIMessageStreamResponse({
@@ -46,8 +54,38 @@ function demoStreamResponse(query: string, offset: number, messages: UIMessage[]
 }
 
 export async function POST(req: Request) {
+  let messages: UIMessage[];
   try {
-    const { messages }: { messages: UIMessage[] } = await req.json();
+    const body = (await req.json()) as { messages?: unknown };
+    if (!Array.isArray(body.messages) || body.messages.length === 0) {
+      return badRequest("Request body must include a non-empty messages array.");
+    }
+    if (body.messages.length > MAX_MESSAGES) {
+      return badRequest(`Too many messages (max ${MAX_MESSAGES}).`);
+    }
+    for (const message of body.messages) {
+      const candidate = message as { role?: unknown; parts?: unknown };
+      // Only conversation roles: a client-supplied "system" message would
+      // otherwise reach the LLM alongside the persona prompt and override it.
+      if (candidate?.role !== "user" && candidate?.role !== "assistant") {
+        return badRequest('Each message must have role "user" or "assistant".');
+      }
+      if (!Array.isArray(candidate.parts)) {
+        return badRequest("Each message must have a parts array.");
+      }
+      for (const part of candidate.parts) {
+        const text = (part as { text?: unknown })?.text;
+        if (typeof text === "string" && text.length > MAX_MESSAGE_CHARS) {
+          return badRequest(`Messages are limited to ${MAX_MESSAGE_CHARS} characters.`);
+        }
+      }
+    }
+    messages = body.messages as UIMessage[];
+  } catch {
+    return badRequest("Request body must be valid JSON.");
+  }
+
+  try {
     const userTexts = extractUserTexts(messages);
     const retrievalQuery = buildRetrievalQuery(userTexts);
 
@@ -83,9 +121,8 @@ export async function POST(req: Request) {
       stream: toUIMessageStream({ stream: result.stream }),
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown Gonzo engine failure";
-    return Response.json({ error: message }, { status: 500 });
+    console.error("Gonzo chat route failed:", error);
+    return Response.json({ error: "Gonzo engine failure" }, { status: 500 });
   }
 }
 

@@ -167,7 +167,6 @@ const QUERY_ALIASES: Record<string, string[]> = {
   "fear and loathing on the campaign trail": ["campaign", "work-campaign-72", "mcgovern"],
   muskie: ["ed", "maine", "new hampshire", "people-muskie"],
   "ed muskie": ["muskie", "people-muskie"],
-  iph: ["muskie", "new hampshire", "people-muskie"],
   wallace: ["george", "alabama", "people-wallace"],
   "george wallace": ["wallace", "people-wallace"],
   humphrey: ["hubert", "1968", "people-humphrey"],
@@ -203,7 +202,7 @@ const QUERY_ALIASES: Record<string, string[]> = {
   father: ["virginia", "bio-father-death"],
   cannon: ["memorial", "bio-cannon-memorial"],
   "straight arrow": ["books", "bio-straight-arrow"],
-  conventions: ["campaign", "work-dispatch-convention"],
+  conventions: ["campaign", "convention", "work-dispatch-convention"],
   "convention coverage": ["chicago", "miami", "work-dispatch-convention"],
   watergate: ["nixon", "work-watergate", "pol-watergate-resignation"],
   "kingdom of fear": ["memoir", "work-kingdom-of-fear"],
@@ -245,10 +244,11 @@ const QUERY_ALIASES: Record<string, string[]> = {
   wrote: ["book", "works"],
   book: ["works"],
   books: ["works"],
+  ibogaine: ["muskie", "new hampshire", "people-muskie"],
 };
 
 const FOLLOW_UP_RE =
-  /^(yes|yeah|yep|ok|okay|and\b|what about|how about|tell me more|more|go on|continue|same|that|those|it)\b/i;
+  /^(yes|yeah|yep|ok|okay|and\b|what about|how about|tell me more|more|go on|continue|same|that|those|it|expand|elaborate|long form|keep going)\b/i;
 
 const IDENTITY_QUERY_RE =
   /^(who are you|who're you|who r u|introduce yourself|what(?:'s| is) your name|tell me about yourself)\b/i;
@@ -273,10 +273,23 @@ function normalize(text: string): string {
   return text.toLowerCase().replace(/['’]/g, "'").replace(/[^a-z0-9\s'-]/g, " ");
 }
 
+/** "acosta's" -> "acosta", "angels'" -> "angels" */
+function stripPossessive(token: string): string {
+  return token.replace(/'s$/, "").replace(/'+$/, "");
+}
+
 function tokenize(text: string): string[] {
-  return normalize(text)
-    .split(/\s+/)
-    .filter((token) => token.length > 1 && (!STOP_WORDS.has(token) || SIGNAL_WORDS.has(token)));
+  const tokens: string[] = [];
+  for (const raw of normalize(text).split(/\s+/)) {
+    if (raw.length <= 1) continue;
+    if (STOP_WORDS.has(raw) && !SIGNAL_WORDS.has(raw)) continue;
+    tokens.push(raw);
+    const stripped = stripPossessive(raw);
+    if (stripped !== raw && stripped.length > 1 && !STOP_WORDS.has(stripped)) {
+      tokens.push(stripped);
+    }
+  }
+  return tokens;
 }
 
 function unique(values: string[]): string[] {
@@ -307,7 +320,7 @@ function withInflections(token: string): string[] {
   if (token.endsWith("ies") && token.length > 4) {
     forms.add(`${token.slice(0, -3)}y`);
   }
-  if (token.endsWith("s") && !token.endsWith("ss") && token.length > 4) {
+  if (token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("'s") && token.length > 4) {
     forms.add(token.slice(0, -1));
   }
   if (token.endsWith("ed") && token.length > 4) {
@@ -359,8 +372,12 @@ const INDEX: IndexedChunk[] = GONZO_CORPUS.filter((chunk) => !chunk.alwaysInclud
   },
 );
 
-function expandQuery(tokens: string[], raw: string): { tokens: string[]; phrases: string[] } {
+function expandQuery(
+  tokens: string[],
+  raw: string,
+): { tokens: string[]; phrases: string[]; boostIds: Set<string> } {
   const phrases: string[] = [];
+  const boostIds = new Set<string>();
   const lowered = normalize(raw);
   const padded = ` ${lowered} `;
   const expanded = tokens.flatMap(withInflections);
@@ -378,6 +395,12 @@ function expandQuery(tokens: string[], raw: string): { tokens: string[]; phrases
     }
 
     for (const target of targets) {
+      // Targets that name a corpus chunk id boost that chunk directly;
+      // they are not text tokens and can never match keywords/content.
+      if (CORPUS_BY_ID.has(target)) {
+        boostIds.add(target);
+        continue;
+      }
       if (target.includes(" ")) phrases.push(target);
       expanded.push(...target.split(" "));
     }
@@ -395,7 +418,7 @@ function expandQuery(tokens: string[], raw: string): { tokens: string[]; phrases
     }
   }
 
-  return { tokens: unique(expanded.filter(Boolean)), phrases: unique(phrases) };
+  return { tokens: unique(expanded.filter(Boolean)), phrases: unique(phrases), boostIds };
 }
 
 function scoreIndexed(
@@ -465,9 +488,12 @@ export type RetrievalResult = {
   alwaysIncluded: CorpusChunk[];
 };
 
+/** Cap scoring work for pathological queries (unbounded user input). */
+const MAX_QUERY_TOKENS = 256;
+
 export function retrieveDetailed(query: string, limit = 8): RetrievalResult {
-  const rawTokens = tokenize(query);
-  const { tokens, phrases } = expandQuery(rawTokens, query);
+  const rawTokens = tokenize(query).slice(0, MAX_QUERY_TOKENS);
+  const { tokens, phrases, boostIds } = expandQuery(rawTokens, query);
   const specificTokens = tokens.filter((token) => !GENERIC_IDENTITY_TOKENS.has(token));
   const identityQuery = isIdentityQuery(query, specificTokens);
   const semMap = semanticScores(query);
@@ -484,7 +510,9 @@ export function retrieveDetailed(query: string, limit = 8): RetrievalResult {
   }
 
   const ranked = INDEX.map((entry) => {
-    const keywordScore = scoreIndexed(tokens, phrases, entry, identityQuery, query);
+    const aliasBoost = boostIds.has(entry.chunk.id) ? 10 : 0;
+    const keywordScore =
+      scoreIndexed(tokens, phrases, entry, identityQuery, query) + aliasBoost;
     const semanticScore = (semMap.get(entry.chunk.id) ?? 0) * 24;
     const score = keywordScore * (1 - semW) + semanticScore * semW;
     return { chunk: entry.chunk, score, keywordScore, semanticScore };
@@ -528,20 +556,53 @@ export function formatRetrievedContext(chunks: CorpusChunk[]): string {
     .join("\n\n");
 }
 
-export function buildRetrievalQuery(userMessages: string[]): string {
-  const recent = userMessages.filter(Boolean).slice(-4);
-  if (recent.length === 0) return "";
+/** True when the text carries at least one token beyond generic identity words. */
+export function hasTopicTokens(text: string): boolean {
+  return tokenize(text).some((token) => !GENERIC_IDENTITY_TOKENS.has(token));
+}
 
-  const latest = recent[recent.length - 1] ?? "";
+/**
+ * A bare continuation like "tell me more" / "go on" / "elaborate" — a
+ * follow-up opener with no topic of its own. "Expand on the Hells Angels
+ * book" names a topic and is a fresh question.
+ */
+export function isBareFollowUp(text: string): boolean {
+  const trimmed = text.trim();
+  const match = trimmed.match(FOLLOW_UP_RE);
+  if (!match) return false;
+  return !hasTopicTokens(trimmed.slice(match[0].length));
+}
+
+export function buildRetrievalQuery(userMessages: string[]): string {
+  const all = userMessages.filter(Boolean);
+  if (all.length === 0) return "";
+
+  const latest = all[all.length - 1] ?? "";
+
+  // "what about X" strips the filler only when X names a topic;
+  // "what about it/that?" falls through to the follow-up join below.
   const aboutMatch = latest.match(/^(?:what|how)\s+about\s+(.+)/i);
-  if (aboutMatch?.[1]) {
-    return aboutMatch[1].trim();
+  const aboutRemainder = aboutMatch?.[1]?.trim();
+  if (aboutRemainder && hasTopicTokens(aboutRemainder)) {
+    return aboutRemainder;
   }
 
-  if (recent.length === 1) return latest;
+  if (all.length === 1) return latest;
 
-  if (FOLLOW_UP_RE.test(latest.trim()) || tokenize(latest).length < 3) {
-    return recent.join(" ");
+  if (IDENTITY_QUERY_RE.test(latest.trim())) return latest;
+
+  if (isBareFollowUp(latest) || !hasTopicTokens(latest)) {
+    // Anchor on the most recent message that still names a topic — searched
+    // over the whole conversation, so a long run of bare follow-ups ("tell me
+    // more", "go on") cannot push the subject out of a fixed window.
+    let start = all.length - 1;
+    while (start > 0) {
+      const text = all[start] ?? "";
+      if (isBareFollowUp(text) || !hasTopicTokens(text)) start -= 1;
+      else break;
+    }
+    const tail = all.slice(Math.max(start + 1, all.length - 5));
+    return [all[start], ...tail].join(" ");
   }
 
   return latest;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { getCorpusStats } from "./corpus";
-import { buildRetrievalQuery, retrieveDetailed } from "./retrieve";
+import { getCorpusStats, validateCorpus } from "./corpus";
+import { buildRetrievalQuery, isBareFollowUp, retrieveDetailed } from "./retrieve";
 
 function idsFor(query: string): string[] {
   return retrieveDetailed(query).hits.map((hit) => hit.chunk.id);
@@ -17,6 +17,7 @@ function assertIncludes(query: string, expectedId: string) {
 const stats = getCorpusStats();
 assert.ok(stats.chunks >= 180, `Corpus too small: ${stats.chunks}`);
 assert.equal(stats.alwaysInclude, 3);
+assert.deepEqual(validateCorpus(), [], "corpus integrity check failed");
 
 assertIncludes("Who are you?", "bio-identity");
 assertIncludes("What is Gonzo journalism?", "theme-gonzo-defined");
@@ -107,6 +108,65 @@ assert.ok(identity.alwaysIncluded.some((chunk) => chunk.id === "voice-core"));
 const nixonToYou = retrieveDetailed("Who was Nixon to you?");
 assert.equal(nixonToYou.hits[0]?.chunk.id, "people-nixon");
 assert.ok(!nixonToYou.hits.some((hit) => hit.chunk.id === "bio-identity"));
+
+// Possessive forms must reach the same chunks as their base nouns.
+assertIncludes("Acosta's disappearance", "people-dr-gonzo");
+assertIncludes("Nixon's resignation", "people-nixon");
+assertIncludes("Muskie's tears", "people-muskie");
+assertIncludes("Steadman's drawings", "people-steadman");
+
+// Curly (typographic) apostrophes must behave like ASCII ones.
+assertIncludes("Hell’s Angels", "work-hells-angels");
+const straightTop = retrieveDetailed("Hell's Angels").hits[0]?.chunk.id;
+const curlyTop = retrieveDetailed("Hell’s Angels").hits[0]?.chunk.id;
+assert.equal(curlyTop, straightTop, "apostrophe glyph changed the top hit");
+
+// Chunk-id alias targets must boost the wired chunk into the hits.
+assertIncludes("tell me about new journalism", "journalism-influence");
+assertIncludes("what happened at the conventions", "work-dispatch-convention");
+assertIncludes("writing advice", "bio-habits");
+assertIncludes("What was the ibogaine story?", "people-muskie");
+
+// "What about <anaphor>?" keeps prior context instead of resetting to identity.
+const aboutIt = buildRetrievalQuery(["tell me about vegas", "What about it?"]);
+assert.match(aboutIt, /vegas/i);
+const aboutThat = buildRetrievalQuery(["tell me about muskie", "HOW ABOUT THAT"]);
+assert.match(aboutThat, /muskie/i);
+
+// A terse fresh topic must not be displaced by the previous question.
+const terse = buildRetrievalQuery(["What happened to the American Dream?", "steadman?"]);
+assert.equal(terse.toLowerCase(), "steadman?");
+
+// A run of bare follow-ups keeps the original subject in the joined query.
+const deepFollowUp = buildRetrievalQuery([
+  "tell me about nixon",
+  "tell me more",
+  "go on",
+  "tell me more",
+]);
+assert.match(deepFollowUp, /nixon/i);
+
+// ...even when the run is long enough to push the topic out of a fixed window.
+const longFollowUp = buildRetrievalQuery([
+  "tell me about nixon",
+  "tell me more",
+  "go on",
+  "tell me more",
+  "go on",
+  "tell me more",
+  "go on",
+]);
+assert.match(longFollowUp, /nixon/i);
+
+// Identity re-asks mid-conversation stay identity queries.
+const midIdentity = buildRetrievalQuery(["tell me about vegas", "who are you?"]);
+assert.equal(midIdentity, "who are you?");
+
+assert.ok(isBareFollowUp("tell me more"));
+assert.ok(isBareFollowUp("go on"));
+assert.ok(isBareFollowUp("elaborate"));
+assert.ok(!isBareFollowUp("expand on the Hells Angels book"));
+assert.ok(!isBareFollowUp("Who was Nixon?"));
 
 console.log(
   `retrieve.test.ts passed (${stats.chunks} chunks, categories=${JSON.stringify(stats.categories)})`,
