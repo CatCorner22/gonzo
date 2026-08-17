@@ -7,11 +7,17 @@ const DEFAULT_HF_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct";
 export type ModelProvider = "gateway" | "huggingface";
 
 export function getConfiguredProvider(): ModelProvider | "none" {
-  if (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN) {
+  if (process.env.AI_GATEWAY_API_KEY) {
     return "gateway";
   }
+  // An explicitly configured provider wins over the ambient OIDC token that
+  // `vercel env pull` / `vercel dev` write into .env.local (and which expires
+  // after ~12h), so a stale token can't hijack provider selection.
   if (process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY) {
     return "huggingface";
+  }
+  if (process.env.VERCEL_OIDC_TOKEN) {
+    return "gateway";
   }
   return "none";
 }

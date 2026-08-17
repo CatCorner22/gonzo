@@ -82,13 +82,25 @@ const STOP = new Set([
 ]);
 
 function normalize(text: string): string {
-  return text.toLowerCase().replace(/['']/g, "'").replace(/[^a-z0-9\s'-]/g, " ");
+  return text.toLowerCase().replace(/['’]/g, "'").replace(/[^a-z0-9\s'-]/g, " ");
+}
+
+/** "acosta's" -> "acosta", "angels'" -> "angels" */
+function stripPossessive(token: string): string {
+  return token.replace(/'s$/, "").replace(/'+$/, "");
 }
 
 function tokenize(text: string): string[] {
-  return normalize(text)
-    .split(/\s+/)
-    .filter((token) => token.length > 2 && !STOP.has(token));
+  const tokens: string[] = [];
+  for (const raw of normalize(text).split(/\s+/)) {
+    if (raw.length <= 2 || STOP.has(raw)) continue;
+    tokens.push(raw);
+    const stripped = stripPossessive(raw);
+    if (stripped !== raw && stripped.length > 2 && !STOP.has(stripped)) {
+      tokens.push(stripped);
+    }
+  }
+  return tokens;
 }
 
 type SparseVector = Map<string, number>;
@@ -96,7 +108,6 @@ type SparseVector = Map<string, number>;
 type IndexedSemantic = {
   chunk: CorpusChunk;
   vector: SparseVector;
-  magnitude: number;
 };
 
 function termFrequency(tokens: string[]): SparseVector {
@@ -104,7 +115,12 @@ function termFrequency(tokens: string[]): SparseVector {
   for (const token of tokens) {
     tf.set(token, (tf.get(token) ?? 0) + 1);
   }
-  const max = Math.max(...tf.values(), 1);
+  // No spread here: spreading an unbounded user query's term map into
+  // Math.max() overflows the stack past ~125k distinct tokens.
+  let max = 1;
+  for (const count of tf.values()) {
+    if (count > max) max = count;
+  }
   for (const [term, count] of tf) {
     tf.set(term, count / max);
   }
@@ -136,7 +152,7 @@ function chunkDocument(chunk: CorpusChunk): string {
 const CORPUS_VECTORS: IndexedSemantic[] = GONZO_CORPUS.filter((chunk) => !chunk.alwaysInclude).map(
   (chunk) => {
     const vector = termFrequency(tokenize(chunkDocument(chunk)));
-    return { chunk, vector, magnitude: magnitude(vector) };
+    return { chunk, vector };
   },
 );
 
@@ -163,20 +179,27 @@ function tfidfQuery(tokens: string[]): { vector: SparseVector; magnitude: number
   return { vector, magnitude: magnitude(vector) };
 }
 
+/** Cap scoring work for pathological queries (unbounded user input). */
+const MAX_QUERY_TOKENS = 256;
+
+// The idf-weighted corpus vectors are query-independent; build them once.
+const WEIGHTED_VECTORS = CORPUS_VECTORS.map((entry) => {
+  const weighted = new Map<string, number>();
+  for (const [term, weight] of entry.vector) {
+    weighted.set(term, weight * idf(term));
+  }
+  return { chunk: entry.chunk, vector: weighted, magnitude: magnitude(weighted) };
+});
+
 export function semanticScores(query: string): Map<string, number> {
-  const tokens = tokenize(query);
+  const tokens = tokenize(query).slice(0, MAX_QUERY_TOKENS);
   if (tokens.length === 0) return new Map();
 
   const { vector: queryVector, magnitude: queryMag } = tfidfQuery(tokens);
   const scores = new Map<string, number>();
 
-  for (const entry of CORPUS_VECTORS) {
-    const weighted = new Map<string, number>();
-    for (const [term, weight] of entry.vector) {
-      weighted.set(term, weight * idf(term));
-    }
-    const entryMag = magnitude(weighted);
-    const cosine = dot(queryVector, weighted) / (queryMag * entryMag);
+  for (const entry of WEIGHTED_VECTORS) {
+    const cosine = dot(queryVector, entry.vector) / (queryMag * entry.magnitude);
     if (cosine > 0.01) {
       scores.set(entry.chunk.id, cosine * (entry.chunk.weight ?? 1));
     }

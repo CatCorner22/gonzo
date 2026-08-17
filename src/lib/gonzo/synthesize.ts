@@ -1,5 +1,5 @@
 import type { CorpusCategory, CorpusChunk } from "./types";
-import { retrieveDetailed } from "./retrieve";
+import { isBareFollowUp, retrieveDetailed } from "./retrieve";
 import { semanticWeight } from "./semantic";
 
 const OPENERS: Record<string, string[]> = {
@@ -27,20 +27,15 @@ const OPENERS: Record<string, string[]> = {
     "Same war, different uniform. I'll trace the thread.",
     "The theme doesn't change. Only the lighting. Let me adjust the lighting.",
   ],
-  style: [
-    "The voice is the method. Everything else is furniture. I'll explain the music.",
-  ],
   default: [
     "All right. Straight from the bunker — no handlers, no word limit.",
     "Here's the dispatch before the coffee cools. Long form, because you asked like you mean it.",
   ],
 };
 
-const CLOSERS: Record<CorpusCategory | "default", string[]> = {
-  style: [
-    "That's the music. Same beat in every city.",
-    "Write it honest or don't write it. The rest is typing.",
-  ],
+// style and safety chunks never reach synthesized replies (see shouldUse),
+// so only the speakable categories need closers.
+const CLOSERS: Partial<Record<CorpusCategory, string[]>> & { default: string[] } = {
   biography: [
     "That's the ledger. The rest is lawyers and weather.",
     "You wanted the life — there it is, unvarnished.",
@@ -65,7 +60,6 @@ const CLOSERS: Record<CorpusCategory | "default", string[]> = {
     "If that doesn't answer you, you're asking the wrong question.",
     "Same theme, new decade. The country never learns; it just redecorates.",
   ],
-  safety: ["I'm the witness. Not the accomplice."],
   default: [
     "That's what I know. The rest is rumor and tomorrow's hangover.",
     "I've said enough for one dispatch. Go think about it in the dark.",
@@ -93,6 +87,15 @@ function pick<T>(items: T[], seed: string): T {
   return items[hashString(seed) % items.length]!;
 }
 
+/**
+ * Deterministic pick that steps through the pool as `rotation` increases, so
+ * consecutive follow-up depths always select different framing text even when
+ * the wrapped chunk slice repeats.
+ */
+function pickRotated<T>(items: T[], seed: string, rotation: number): T {
+  return items[(hashString(seed) + rotation) % items.length]!;
+}
+
 function toVoice(content: string): string {
   return content
     .replace(/^EXEMPLAR TONE:\s*/i, "")
@@ -102,14 +105,18 @@ function toVoice(content: string): string {
     .replace(/\bYou lived\b/g, "I lived")
     .replace(/\bYou wrote\b/g, "I wrote")
     .replace(/\bYou treated\b/g, "I treated")
-    .replace(/\bThompson's\b/g, "My")
+    .replace(/(^|[.!?]\s+)Thompson's\b/g, "$1My")
+    .replace(/\bThompson's\b/g, "my")
+    .replace(/\bFor Thompson\b/g, "For me")
     .replace(/\bWrite in first person\b/i, "I write in first person")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// Style chunks are model-facing tone instructions, not speakable prose;
+// safety chunks are policy. Neither belongs in a synthesized reply.
 function shouldUse(chunk: CorpusChunk): boolean {
-  return chunk.category !== "safety" && !chunk.id.startsWith("voice-exemplar");
+  return chunk.category !== "safety" && chunk.category !== "style";
 }
 
 /** Longer queries and explicit depth requests get more paragraphs. */
@@ -127,15 +134,14 @@ export function chunkCountForQuery(query: string): number {
   return 3;
 }
 
-export function synthesizeGonzoReply(query: string, offset = 0): string {
+export function synthesizeGonzoReply(query: string, followUpDepth = 0): string {
   const count = chunkCountForQuery(query);
+  const offset = followUpDepth * count;
   const retrieveLimit = Math.max(12, offset + count + 4);
   const detail = retrieveDetailed(query, retrieveLimit);
   const hits = detail.hits.filter((hit) => shouldUse(hit.chunk));
-  const sliced = hits.slice(offset, offset + count);
-  const used = sliced.length > 0 ? sliced : hits.slice(0, count);
 
-  if (used.length === 0) {
+  if (hits.length === 0) {
     return [
       pick(OPENERS.default, query),
       "I don't have a clean file on that — which usually means either you invented the topic or the country hasn't lied about it loudly enough yet.",
@@ -143,10 +149,19 @@ export function synthesizeGonzoReply(query: string, offset = 0): string {
     ].join("\n\n");
   }
 
+  // Each follow-up advances by a full reply's worth of chunks and wraps when
+  // the topic is exhausted; rotated openers/closers keep even wrapped replies
+  // from repeating verbatim.
+  const start = offset % hits.length;
+  let used = hits.slice(start, start + count);
+  if (used.length < count && start > 0) {
+    used = used.concat(hits.slice(0, Math.min(count - used.length, start)));
+  }
+
   const primary = used[0]!.chunk;
   const openerPool = OPENERS[primary.category] ?? OPENERS.default;
   const seed = `${query}:${offset}`;
-  const parts: string[] = [pick(openerPool, seed)];
+  const parts: string[] = [pickRotated(openerPool, query, followUpDepth)];
 
   used.forEach((hit, index) => {
     if (index > 0) {
@@ -155,17 +170,28 @@ export function synthesizeGonzoReply(query: string, offset = 0): string {
     parts.push(toVoice(hit.chunk.content));
   });
 
-  parts.push(pick(CLOSERS[primary.category] ?? CLOSERS.default, `${seed}:close`));
+  parts.push(
+    pickRotated(CLOSERS[primary.category] ?? CLOSERS.default, `${query}:close`, followUpDepth),
+  );
 
   return parts.join("\n\n");
 }
 
+/**
+ * Number of consecutive trailing bare follow-ups ("tell me more", "go on").
+ * A message that names its own topic ("expand on the Hells Angels book") is a
+ * fresh question, not a follow-up, and resets the depth.
+ */
 export function followUpOffset(userMessages: string[]): number {
-  const latest = userMessages.at(-1)?.trim() ?? "";
-  if (!/^(tell me more|more|go on|continue|and\b|expand|elaborate|long form)/i.test(latest)) {
-    return 0;
+  let depth = 0;
+  for (let i = userMessages.length - 1; i >= 1; i -= 1) {
+    if (isBareFollowUp(userMessages[i] ?? "")) {
+      depth += 1;
+    } else {
+      break;
+    }
   }
-  return Math.min((userMessages.length - 1) * 2, 8);
+  return depth;
 }
 
 export function retrievalLimitForQuery(query: string): number {

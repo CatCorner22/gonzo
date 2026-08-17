@@ -6,9 +6,9 @@ export const CAMPAIGN_FIGURES_CHUNKS: CorpusChunk[] = [
     id: "people-muskie",
     topic: "Ed Muskie and the snowflakes",
     category: "people",
-    keywords: ["muskie", "ed", "maine", "snowflakes", "new hampshire", "tears"],
+    keywords: ["muskie", "ed", "maine", "snowflakes", "new hampshire", "tears", "ibogaine"],
     content:
-      "Ed Muskie entered 1972 as the sane front-runner and left New Hampshire as a man the press decided had cried in the snow. Whether it was a tear or melted snow became the story — proof that campaigns die from optics before they die from votes.",
+      "Ed Muskie entered 1972 as the sane front-runner and left New Hampshire as a man the press decided had cried in the snow. Whether it was a tear or melted snow became the story — proof that campaigns die from optics before they die from votes. Thompson's Rolling Stone rumor that Muskie was dosed on ibogaine — invented from thin air and cheerfully owned up to later — chased the candidacy the rest of the way down.",
   },
   {
     id: "people-humphrey",
